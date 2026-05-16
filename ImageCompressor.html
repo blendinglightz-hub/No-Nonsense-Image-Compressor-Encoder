@@ -74,12 +74,12 @@
     /* ── Format Cards ── */
     #format-selector {
       display: flex;
-      gap: 8px;
+      flex-direction: row;
       flex-wrap: wrap;
+      gap: 8px;
     }
     .fmt-card {
-      flex: 1 1 calc(20% - 8px);
-      min-width: 90px;
+      flex: 0 0 auto;
       background: var(--surface);
       border: 1.5px solid var(--border);
       border-radius: var(--radius);
@@ -88,7 +88,7 @@
       transition: border-color 0.15s, background 0.15s;
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
     }
     .fmt-card:hover { border-color: var(--accent); }
     .fmt-card.active {
@@ -96,11 +96,17 @@
       background: color-mix(in srgb, var(--accent) 12%, var(--surface));
     }
     .fmt-card .fmt-name { font-weight: 600; font-size: 13px; color: var(--muted); }
-    .fmt-card .fmt-desc { font-size: 11px; color: var(--muted); }
+    .fmt-card.active .fmt-name { color: var(--text); }
+    .fmt-card .fmt-desc {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.6;
+      white-space: nowrap;
+    }
     .fmt-card .fmt-dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: var(--border);
-      margin-top: 6px;
+      margin-top: 4px;
       transition: background 0.15s;
     }
     .fmt-card.active .fmt-dot { background: var(--accent); }
@@ -267,7 +273,6 @@
     button.secondary[hidden] { display: none !important; }
 
     @media (max-width: 480px) {
-      .fmt-card { flex: 1 1 calc(33% - 8px); }
       .queue-row { grid-template-columns: 32px 1fr auto auto auto; }
       .queue-savings, .queue-status { display: none; }
     }
@@ -290,27 +295,27 @@
     <div id="format-selector">
       <button type="button" class="fmt-card active" data-fmt="jpeg">
         <span class="fmt-name">JPEG</span>
-        <span class="fmt-desc">Lossy | Small File Size | Usable Almost Anywhere.</span>
+        <span class="fmt-desc">Lossy<br>Good Compression<br>Universal</span>
         <span class="fmt-dot"></span>
       </button>
       <button type="button" class="fmt-card" data-fmt="png">
         <span class="fmt-name">PNG</span>
-        <span class="fmt-desc">Lossless, transparency | Large File Size | Usable Almost Anywhere</span>
+        <span class="fmt-desc">Lossless · Transparency<br>Large Files, No Compression<br>Universal</span>
         <span class="fmt-dot"></span>
       </button>
       <button type="button" class="fmt-card" data-fmt="webp">
         <span class="fmt-name">WebP</span>
-        <span class="fmt-desc">Lossy | Modern With Great Compression | Highly Usable | Not Full Color!</span>
+        <span class="fmt-desc">Lossy or Lossless · Transparency<br>Good Compression<br>Broadly Supported</span>
         <span class="fmt-dot"></span>
       </button>
       <button type="button" class="fmt-card" data-fmt="avif">
         <span class="fmt-name">AVIF</span>
-        <span class="fmt-desc">Lossy | Super Modern Best Compression | Moderatly Supported</span>
+        <span class="fmt-desc">Lossy or Virtually Lossless · Transparency<br>Best Compression<br>Broadly Supported</span>
         <span class="fmt-dot"></span>
       </button>
       <button type="button" class="fmt-card" data-fmt="jxl">
         <span class="fmt-name">JPEG XL</span>
-        <span class="fmt-desc">Lossy Or Lossless | Very Modern With Great Compression | Not Widley Supported</span>
+        <span class="fmt-desc">Lossy or Lossless · Transparency<br>Excellent Compression<br>Limited Support</span>
         <span class="fmt-dot"></span>
       </button>
     </div>
@@ -329,7 +334,7 @@
       </div>
       <label class="toggle-row" id="row-lossless" hidden>
         <input type="checkbox" id="s-lossless">
-        Lossless (hides quality slider when enabled)
+        <span id="lossless-label">Lossless</span>
       </label>
     </div>
 
@@ -377,6 +382,7 @@
   const sLossless     = document.getElementById('s-lossless');
   const vQuality      = document.getElementById('v-quality');
   const vEffort       = document.getElementById('v-effort');
+  const losslessLabel = document.getElementById('lossless-label');
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function fmtBytes(bytes) {
@@ -466,8 +472,9 @@
     const showQuality = !state.lossless && f !== 'png';
     rowQuality.hidden = !showQuality;
     rowEffort.hidden  = !(f === 'avif' || f === 'jxl');
-    rowLossless.hidden = f !== 'jxl';
-    if (f !== 'jxl') { state.lossless = false; sLossless.checked = false; }
+    rowLossless.hidden = !(f === 'webp' || f === 'avif' || f === 'jxl');
+    losslessLabel.textContent = f === 'avif' ? 'Virtually Lossless (Quality 100)' : 'Lossless';
+    if (f === 'jpeg' || f === 'png') { state.lossless = false; sLossless.checked = false; }
   }
 
   // ── Queue Render ────────────────────────────────────────────────────────
@@ -605,20 +612,28 @@
     return canvasToBuffer(canvasFromImageData(imgData), 'image/png');
   }
 
-  async function encodeWebP(imgData, quality) {
+  async function encodeWebP(imgData, quality, lossless) {
+    if (lossless) {
+      if (!_webpEncode) {
+        const { encode } = await import('https://esm.sh/@jsquash/webp');
+        _webpEncode = encode;
+      }
+      return _webpEncode(imgData, { lossless: true });
+    }
     return canvasToBuffer(canvasFromImageData(imgData), 'image/webp', quality / 100);
   }
 
   // ── Encode (jsquash, lazy-loaded with explicit WASM init) ────────────────
+  let _webpEncode = null;
   let _avifEncode = null;
   let _jxlEncode  = null;
 
-  async function encodeAVIF(imgData, quality, effort) {
+  async function encodeAVIF(imgData, quality, effort, lossless) {
     if (!_avifEncode) {
       const { encode } = await import('https://esm.sh/@jsquash/avif');
       _avifEncode = encode;
     }
-    return _avifEncode(imgData, { quality, speed: 10 - effort });
+    return _avifEncode(imgData, { quality: lossless ? 100 : quality, speed: 10 - effort });
   }
 
   async function encodeJXL(imgData, quality, effort, lossless) {
@@ -635,8 +650,8 @@
     switch (format) {
       case 'jpeg': return { buffer: await encodeJPEG(imgData, quality), mime: 'image/jpeg', ext: 'jpg' };
       case 'png':  return { buffer: await encodePNG(imgData),           mime: 'image/png',  ext: 'png' };
-      case 'webp': return { buffer: await encodeWebP(imgData, quality), mime: 'image/webp', ext: 'webp' };
-      case 'avif': return { buffer: await encodeAVIF(imgData, quality, effort), mime: 'image/avif', ext: 'avif' };
+      case 'webp': return { buffer: await encodeWebP(imgData, quality, lossless), mime: 'image/webp', ext: 'webp' };
+      case 'avif': return { buffer: await encodeAVIF(imgData, quality, effort, lossless), mime: 'image/avif', ext: 'avif' };
       case 'jxl':  return { buffer: await encodeJXL(imgData, quality, effort, lossless), mime: 'image/jxl', ext: 'jxl' };
       default: throw new Error(`Unknown format: ${format}`);
     }
