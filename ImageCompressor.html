@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Compressor</title>
+  <style>
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #22263a;
+      --border:    #2d3148;
+      --text:      #e8e9f0;
+      --muted:     #7b7e99;
+      --accent:    #7c3aed;
+      --accent-h:  #6d28d9;
+      --success:   #10b981;
+      --error:     #ef4444;
+      --warn:      #f59e0b;
+      --radius:    10px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100dvh;
+      padding: 24px 16px 48px;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.3px;
+    }
+
+    /* ── Drop Zone ── */
+    #drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      position: relative;
+    }
+    #drop-zone.drag-over {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+    }
+    #drop-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    #drop-zone .dz-icon { font-size: 32px; margin-bottom: 8px; }
+    #drop-zone .dz-label { color: var(--muted); font-size: 13px; }
+    #drop-zone .dz-label strong { color: var(--text); }
+    #drop-zone .dz-count { color: var(--accent); font-weight: 600; margin-top: 4px; }
+
+    /* ── Format Cards ── */
+    #format-selector {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .fmt-card {
+      flex: 1 1 calc(20% - 8px);
+      min-width: 90px;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .fmt-card:hover { border-color: var(--accent); }
+    .fmt-card.active {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    }
+    .fmt-card .fmt-name { font-weight: 600; font-size: 13px; color: var(--muted); }
+    .fmt-card .fmt-desc { font-size: 11px; color: var(--muted); }
+    .fmt-card .fmt-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--border);
+      margin-top: 6px;
+      transition: background 0.15s;
+    }
+    .fmt-card.active .fmt-dot { background: var(--accent); }
+
+    /* ── Settings Panel ── */
+    #settings {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .setting-row label {
+      width: 70px;
+      font-size: 13px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .setting-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .setting-row .val {
+      width: 28px;
+      text-align: right;
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .toggle-row input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+    [hidden] { display: none !important; }
+
+    /* ── File Queue ── */
+    #queue-section { display: flex; flex-direction: column; gap: 8px; }
+    #queue-section h2 { font-size: 13px; color: var(--muted); font-weight: 500; }
+    #queue-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .queue-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      display: grid;
+      grid-template-columns: 36px 1fr auto auto auto auto auto;
+      align-items: center;
+      gap: 10px;
+    }
+    .queue-thumb {
+      width: 32px; height: 32px;
+      border-radius: 4px;
+      object-fit: cover;
+      background: var(--surface2);
+    }
+    .queue-name {
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .queue-size {
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .queue-savings {
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      color: var(--success);
+    }
+    .queue-status {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: var(--surface2);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .queue-status.processing { color: var(--warn); }
+    .queue-status.done { color: var(--success); }
+    .queue-status.error { color: var(--error); }
+    .queue-dl {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.1s;
+      white-space: nowrap;
+    }
+    .queue-dl:hover { background: var(--accent); border-color: var(--accent); }
+    .queue-dl[hidden] { display: none !important; }
+
+    .queue-row.skipped { opacity: 0.45; }
+
+    .queue-actions { display: flex; gap: 4px; align-items: center; }
+    .queue-skip, .queue-remove {
+      font-size: 11px;
+      padding: 3px 7px;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s, border-color 0.1s;
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+    .queue-skip:hover { background: var(--warn); border-color: var(--warn); color: #fff; }
+    .queue-row.skipped .queue-skip { color: var(--accent); border-color: var(--accent); background: transparent; }
+    .queue-row.skipped .queue-skip:hover { background: var(--accent); color: #fff; }
+    .queue-remove:hover { background: var(--error); border-color: var(--error); color: #fff; }
+
+    /* ── Action Bar ── */
+    #action-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    button.primary {
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button.primary:hover { background: var(--accent-h); }
+    button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.secondary {
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      border: 1.5px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    button.secondary:hover { border-color: var(--accent); }
+    button.secondary[hidden] { display: none !important; }
+
+    @media (max-width: 480px) {
+      .fmt-card { flex: 1 1 calc(33% - 8px); }
+      .queue-row { grid-template-columns: 32px 1fr auto auto auto; }
+      .queue-savings, .queue-status { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Image Encoder & Compressor</h1>
+
+    <!-- Drop Zone -->
+    <div id="drop-zone">
+      <input type="file" id="file-input" accept="image/*,.jxl,.avif" multiple>
+      <div class="dz-icon">🗜️</div>
+      <div class="dz-label"><strong>Drop images here</strong> or click to browse</div>
+      <div class="dz-label">JPEG · PNG · WebP · GIF · BMP · AVIF · JXL</div>
+      <div class="dz-count" id="dz-count" hidden></div>
+    </div>
+
+    <!-- Format Selector -->
+    <div id="format-selector">
+      <button type="button" class="fmt-card active" data-fmt="jpeg">
+        <span class="fmt-name">JPEG</span>
+        <span class="fmt-desc">Lossy | Small File Size | Usable Almost Anywhere.</span>
+        <span class="fmt-dot"></span>
+      </button>
+      <button type="button" class="fmt-card" data-fmt="png">
+        <span class="fmt-name">PNG</span>
+        <span class="fmt-desc">Lossless, transparency | Large File Size | Usable Almost Anywhere</span>
+        <span class="fmt-dot"></span>
+      </button>
+      <button type="button" class="fmt-card" data-fmt="webp">
+        <span class="fmt-name">WebP</span>
+        <span class="fmt-desc">Lossy | Modern With Great Compression | Highly Usable | Not Full Color!</span>
+        <span class="fmt-dot"></span>
+      </button>
+      <button type="button" class="fmt-card" data-fmt="avif">
+        <span class="fmt-name">AVIF</span>
+        <span class="fmt-desc">Lossy | Super Modern Best Compression | Moderatly Supported</span>
+        <span class="fmt-dot"></span>
+      </button>
+      <button type="button" class="fmt-card" data-fmt="jxl">
+        <span class="fmt-name">JPEG XL</span>
+        <span class="fmt-desc">Lossy Or Lossless | Very Modern With Great Compression | Not Widley Supported</span>
+        <span class="fmt-dot"></span>
+      </button>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settings">
+      <div class="setting-row" id="row-quality">
+        <label for="s-quality">Quality</label>
+        <input type="range" id="s-quality" min="1" max="100" value="80">
+        <span class="val" id="v-quality">80</span>
+      </div>
+      <div class="setting-row" id="row-effort" hidden>
+        <label for="s-effort">Effort</label>
+        <input type="range" id="s-effort" min="1" max="9" value="7">
+        <span class="val" id="v-effort">7</span>
+      </div>
+      <label class="toggle-row" id="row-lossless" hidden>
+        <input type="checkbox" id="s-lossless">
+        Lossless (hides quality slider when enabled)
+      </label>
+    </div>
+
+    <!-- File Queue -->
+    <div id="queue-section" hidden>
+      <h2>Files</h2>
+      <div id="queue-list"></div>
+    </div>
+
+    <!-- Action Bar -->
+    <div id="action-bar">
+      <button type="button" class="primary" id="btn-compress" disabled>Compress All</button>
+      <button type="button" class="secondary" id="btn-zip" hidden>Download All as ZIP</button>
+      <button type="button" class="secondary" id="btn-all-individual" hidden>Download All Individually</button>
+    </div>
+  </div>
+
+  <script type="module">
+  import JSZip from 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm';
+
+  // ── State ──────────────────────────────────────────────────────────────
+  const state = {
+    queue: [],       // { id, file, status, skipped, originalSize, compressedSize, result, error }
+    format: 'jpeg',
+    quality: 80,
+    effort: 7,
+    lossless: false,
+    running: false,
+  };
+
+  // ── DOM refs ───────────────────────────────────────────────────────────
+  const dropZone      = document.getElementById('drop-zone');
+  const fileInput     = document.getElementById('file-input');
+  const dzCount       = document.getElementById('dz-count');
+  const queueSection  = document.getElementById('queue-section');
+  const queueList     = document.getElementById('queue-list');
+  const btnCompress   = document.getElementById('btn-compress');
+  const btnZip        = document.getElementById('btn-zip');
+  const btnAllInd     = document.getElementById('btn-all-individual');
+  const rowQuality    = document.getElementById('row-quality');
+  const rowEffort     = document.getElementById('row-effort');
+  const rowLossless   = document.getElementById('row-lossless');
+  const sQuality      = document.getElementById('s-quality');
+  const sEffort       = document.getElementById('s-effort');
+  const sLossless     = document.getElementById('s-lossless');
+  const vQuality      = document.getElementById('v-quality');
+  const vEffort       = document.getElementById('v-effort');
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function fmtBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function makeId() { return crypto.randomUUID(); }
+
+  // ── Drop Zone ───────────────────────────────────────────────────────────
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', e => {
+    if (!dropZone.contains(e.relatedTarget)) {
+      dropZone.classList.remove('drag-over');
+    }
+  });
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    addFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', () => {
+    addFiles([...fileInput.files]);
+    fileInput.value = '';
+  });
+
+  function addFiles(files) {
+    const imageFiles = files.filter(f => f.type.startsWith('image/') || f.name.endsWith('.jxl') || f.name.endsWith('.avif'));
+    for (const file of imageFiles) {
+      state.queue.push({
+        id: makeId(),
+        file,
+        status: 'queued',
+        skipped: false,
+        originalSize: file.size,
+        compressedSize: null,
+        result: null,
+        error: null,
+      });
+    }
+    renderQueue();
+    updateActionBar();
+  }
+
+  // ── Format Selector ─────────────────────────────────────────────────────
+  document.querySelectorAll('.fmt-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (state.format === card.dataset.fmt) return;
+      document.querySelectorAll('.fmt-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      state.format = card.dataset.fmt;
+      updateSettings();
+      // Reset done entries so they re-compress in the new format
+      for (const entry of state.queue) {
+        if (entry.status === 'done') {
+          entry.status       = 'queued';
+          entry.compressedSize = null;
+          entry.result       = null;
+          entry.error        = null;
+        }
+      }
+      renderQueue();
+      updateActionBar();
+    });
+  });
+
+  // ── Settings Panel ──────────────────────────────────────────────────────
+  sQuality.addEventListener('input', () => {
+    state.quality = +sQuality.value;
+    vQuality.textContent = sQuality.value;
+  });
+  sEffort.addEventListener('input', () => {
+    state.effort = +sEffort.value;
+    vEffort.textContent = sEffort.value;
+  });
+  sLossless.addEventListener('change', () => {
+    state.lossless = sLossless.checked;
+    updateSettings();
+  });
+
+  function updateSettings() {
+    const f = state.format;
+    const showQuality = !state.lossless && f !== 'png';
+    rowQuality.hidden = !showQuality;
+    rowEffort.hidden  = !(f === 'avif' || f === 'jxl');
+    rowLossless.hidden = f !== 'jxl';
+    if (f !== 'jxl') { state.lossless = false; sLossless.checked = false; }
+  }
+
+  // ── Queue Render ────────────────────────────────────────────────────────
+  function renderQueue() {
+    queueList.querySelectorAll('.queue-thumb').forEach(img => {
+      if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    });
+    queueSection.hidden = state.queue.length === 0;
+    if (state.queue.length) {
+      dzCount.removeAttribute('hidden');
+    } else {
+      dzCount.setAttribute('hidden', '');
+    }
+    dzCount.textContent = `${state.queue.length} file${state.queue.length !== 1 ? 's' : ''} selected`;
+
+    queueList.innerHTML = '';
+    for (const entry of state.queue) {
+      const row = document.createElement('div');
+      row.className = 'queue-row';
+      if (entry.skipped) row.classList.add('skipped');
+      row.dataset.id = entry.id;
+
+      const thumb = document.createElement('img');
+      thumb.className = 'queue-thumb';
+      thumb.alt = '';
+      const objUrl = URL.createObjectURL(entry.file);
+      thumb.src = objUrl;
+      thumb.onload = () => URL.revokeObjectURL(objUrl);
+
+      const name = document.createElement('div');
+      name.className = 'queue-name';
+      name.title = entry.file.name;
+      name.textContent = entry.file.name;
+
+      const origSize = document.createElement('div');
+      origSize.className = 'queue-size';
+      origSize.textContent = fmtBytes(entry.originalSize);
+
+      const compSize = document.createElement('div');
+      compSize.className = 'queue-size';
+      compSize.textContent = entry.compressedSize !== null ? '→ ' + fmtBytes(entry.compressedSize) : '→ —';
+
+      const savings = document.createElement('div');
+      savings.className = 'queue-savings';
+      if (entry.compressedSize !== null) {
+        const pct = parseFloat(((1 - entry.compressedSize / entry.originalSize) * 100).toFixed(1));
+        savings.textContent = pct > 0 ? `↓${pct}%` : `↑${Math.abs(pct)}%`;
+        savings.style.color = pct > 0 ? 'var(--success)' : 'var(--error)';
+      }
+
+      const status = document.createElement('div');
+      status.className = `queue-status ${entry.status}`;
+      status.textContent = entry.status.charAt(0).toUpperCase() + entry.status.slice(1);
+
+      const dlBtn = document.createElement('button');
+      dlBtn.type = 'button';
+      dlBtn.className = 'queue-dl';
+      dlBtn.textContent = '↓';
+      dlBtn.title = 'Download';
+      dlBtn.setAttribute('hidden', '');
+      dlBtn.addEventListener('click', () => downloadEntry(entry));
+
+      const skipBtn = document.createElement('button');
+      skipBtn.type = 'button';
+      skipBtn.className = 'queue-skip';
+      skipBtn.textContent = entry.skipped ? 'Unskip' : 'Skip';
+      skipBtn.title = entry.skipped ? 'Include in batch' : 'Exclude from batch';
+      skipBtn.addEventListener('click', () => skipEntry(entry));
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'queue-remove';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove from queue';
+      removeBtn.addEventListener('click', () => removeEntry(entry));
+
+      const actions = document.createElement('div');
+      actions.className = 'queue-actions';
+      actions.append(dlBtn, skipBtn, removeBtn);
+
+      row.append(thumb, name, origSize, compSize, savings, status, actions);
+      queueList.appendChild(row);
+    }
+  }
+
+  // ── Action Bar ──────────────────────────────────────────────────────────
+  function updateActionBar() {
+    btnCompress.disabled = state.queue.length === 0;
+    const allDone = state.queue.length > 0 && state.queue.every(e => e.status === 'done' || e.status === 'error' || e.skipped);
+    if (allDone) {
+      btnZip.removeAttribute('hidden');
+      btnAllInd.removeAttribute('hidden');
+    } else {
+      btnZip.setAttribute('hidden', '');
+      btnAllInd.setAttribute('hidden', '');
+    }
+  }
+
+  // ── Decode ──────────────────────────────────────────────────────────────
+  async function decodeToPixels(file) {
+    const bmp = await createImageBitmap(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bmp, 0, 0);
+    bmp.close();
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  // ── Encode (canvas-native) ───────────────────────────────────────────────
+  function canvasFromImageData(imgData) {
+    const canvas = document.createElement('canvas');
+    canvas.width = imgData.width;
+    canvas.height = imgData.height;
+    canvas.getContext('2d').putImageData(imgData, 0, 0);
+    return canvas;
+  }
+
+  function canvasToBuffer(canvas, mimeType, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        blob => blob ? blob.arrayBuffer().then(resolve, reject) : reject(new Error('toBlob returned null')),
+        mimeType,
+        quality
+      );
+    });
+  }
+
+  async function encodeJPEG(imgData, quality) {
+    return canvasToBuffer(canvasFromImageData(imgData), 'image/jpeg', quality / 100);
+  }
+
+  async function encodePNG(imgData) {
+    return canvasToBuffer(canvasFromImageData(imgData), 'image/png');
+  }
+
+  async function encodeWebP(imgData, quality) {
+    return canvasToBuffer(canvasFromImageData(imgData), 'image/webp', quality / 100);
+  }
+
+  // ── Encode (jsquash, lazy-loaded with explicit WASM init) ────────────────
+  let _avifEncode = null;
+  let _jxlEncode  = null;
+
+  async function encodeAVIF(imgData, quality, effort) {
+    if (!_avifEncode) {
+      const { encode } = await import('https://esm.sh/@jsquash/avif');
+      _avifEncode = encode;
+    }
+    return _avifEncode(imgData, { quality, speed: 10 - effort });
+  }
+
+  async function encodeJXL(imgData, quality, effort, lossless) {
+    if (!_jxlEncode) {
+      const { encode } = await import('https://esm.sh/@jsquash/jxl');
+      _jxlEncode = encode;
+    }
+    // lossless field omitted — not in jsquash 1.x schema; quality 100 = lossless in libjxl
+    return _jxlEncode(imgData, { quality: lossless ? 100 : Math.min(quality, 99), effort: Math.max(1, Math.min(9, effort)) });
+  }
+
+  async function encode(imgData) {
+    const { format, quality, effort, lossless } = state;
+    switch (format) {
+      case 'jpeg': return { buffer: await encodeJPEG(imgData, quality), mime: 'image/jpeg', ext: 'jpg' };
+      case 'png':  return { buffer: await encodePNG(imgData),           mime: 'image/png',  ext: 'png' };
+      case 'webp': return { buffer: await encodeWebP(imgData, quality), mime: 'image/webp', ext: 'webp' };
+      case 'avif': return { buffer: await encodeAVIF(imgData, quality, effort), mime: 'image/avif', ext: 'avif' };
+      case 'jxl':  return { buffer: await encodeJXL(imgData, quality, effort, lossless), mime: 'image/jxl', ext: 'jxl' };
+      default: throw new Error(`Unknown format: ${format}`);
+    }
+  }
+
+  // ── Event Handlers ──────────────────────────────────────────────────────
+  btnCompress.addEventListener('click', () => compressAll());
+  btnZip.addEventListener('click', () => downloadZip());
+  btnAllInd.addEventListener('click', () => downloadAllIndividual());
+
+  async function compressAll() {
+    if (state.running) return;
+    state.running = true;
+    btnCompress.disabled = true;
+    try {
+      for (const entry of state.queue) {
+        if (entry.status === 'done' || entry.skipped) continue;
+
+        entry.status = 'processing';
+        updateRow(entry);
+
+        try {
+          const imgData = await decodeToPixels(entry.file);
+          const { buffer, mime, ext } = await encode(imgData);
+          entry.result        = { buffer, mime, ext };
+          entry.compressedSize = buffer.byteLength;
+          entry.status        = 'done';
+        } catch (err) {
+          entry.status = 'error';
+          entry.error  = err.message;
+          console.error(entry.file.name, err);
+        }
+
+        updateRow(entry);
+      }
+    } finally {
+      state.running = false;
+      updateActionBar();
+    }
+  }
+
+  function skipEntry(entry) {
+    entry.skipped = !entry.skipped;
+    updateRow(entry);
+    updateActionBar();
+  }
+
+  function removeEntry(entry) {
+    const idx = state.queue.indexOf(entry);
+    if (idx !== -1) state.queue.splice(idx, 1);
+    renderQueue();
+    updateActionBar();
+  }
+
+  function updateRow(entry) {
+    const row = queueList.querySelector(`[data-id="${entry.id}"]`);
+    if (!row) return;
+
+    row.classList.toggle('skipped', entry.skipped);
+    const skipBtn = row.querySelector('.queue-skip');
+    if (skipBtn) {
+      skipBtn.textContent = entry.skipped ? 'Unskip' : 'Skip';
+      skipBtn.title = entry.skipped ? 'Include in batch' : 'Exclude from batch';
+    }
+
+    const statusEl = row.querySelector('.queue-status');
+    statusEl.className = `queue-status ${entry.status}`;
+    statusEl.textContent = entry.status.charAt(0).toUpperCase() + entry.status.slice(1);
+    if (entry.status === 'error' && entry.error) {
+      statusEl.title = entry.error;
+    } else {
+      statusEl.title = '';
+    }
+
+    if (entry.compressedSize !== null) {
+      const sizeEls = row.querySelectorAll('.queue-size');
+      sizeEls[1].textContent = '→ ' + fmtBytes(entry.compressedSize);
+
+      const pct = parseFloat(((1 - entry.compressedSize / entry.originalSize) * 100).toFixed(1));
+      const savEl = row.querySelector('.queue-savings');
+      savEl.textContent = pct > 0 ? `↓${pct}%` : `↑${Math.abs(pct)}%`;
+      savEl.style.color = pct > 0 ? 'var(--success)' : 'var(--error)';
+    }
+
+    const dlBtn = row.querySelector('.queue-dl');
+    if (entry.status === 'done') {
+      dlBtn.removeAttribute('hidden');
+    } else {
+      dlBtn.setAttribute('hidden', '');
+    }
+  }
+
+  function downloadEntry(entry) {
+    if (!entry.result) return;
+    const { buffer, mime, ext } = entry.result;
+    const stem = entry.file.name.replace(/\.[^.]+$/, '');
+    triggerDownload(buffer, mime, `${stem}.${ext}`);
+  }
+
+  function triggerDownload(buffer, mime, filename) {
+    const blob = new Blob([buffer], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+
+  async function downloadZip() {
+    const done = state.queue.filter(e => e.status === 'done');
+    if (!done.length) return;
+
+    const zip = new JSZip();
+    for (const entry of done) {
+      const { buffer, ext } = entry.result;
+      const stem = entry.file.name.replace(/\.[^.]+$/, '');
+      zip.file(`${stem}.${ext}`, buffer);
+    }
+
+    let url;
+    try {
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 1 } });
+      url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href     = url;
+      a.download = 'compressed-images.zip';
+      a.click();
+    } finally {
+      if (url) setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    }
+  }
+
+  function downloadAllIndividual() {
+    const done = state.queue.filter(e => e.status === 'done');
+    for (let i = 0; i < done.length; i++) {
+      setTimeout(() => downloadEntry(done[i]), i * 200);
+    }
+  }
+
+  // ── Init ────────────────────────────────────────────────────────────────
+  updateSettings();
+  updateActionBar();
+  </script>
+</body>
+</html>
